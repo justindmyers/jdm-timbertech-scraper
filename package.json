@@ -1,0 +1,32 @@
+{
+	"name": "element-scraper",
+	"version": "1.0.0",
+	"description": "A Node.js web scraper using Playwright to capture element variations and generate visual documentation",
+	"main": "src/scraper.js",
+	"scripts": {
+		"start": "node cli.js",
+		"example": "node example.js",
+		"test": "node test.js",
+		"scrape:buttons": "node cli.js buttons",
+		"scrape:cards": "node cli.js cards",
+		"scrape:timbertech": "node cli.js timbertech",
+		"open-report": "node utils.js open",
+		"clean": "node utils.js clean",
+		"status": "node utils.js status"
+	},
+	"keywords": [
+		"web-scraping",
+		"playwright",
+		"automation",
+		"screenshots",
+		"element-variations",
+		"documentation"
+	],
+	"author": "",
+	"license": "MIT",
+	"dependencies": {
+		"fs-extra": "^11.3.0",
+		"path": "^0.12.7",
+		"playwright": "^1.54.1"
+	}
+}
