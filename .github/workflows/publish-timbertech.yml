@@ -46,9 +46,10 @@ jobs:
       - name: Run TimberTech scraper
         run: |
           echo "Running TimberTech element scraper..."
-          node cli.js timbertech-sitemap
+          xvfb-run -a node cli.js timbertech-sitemap
         env:
           # Ensure headless mode for CI
+          CI: true
           PLAYWRIGHT_HEADLESS: true
 
       - name: Prepare GitHub Pages content

@@ -17,9 +17,12 @@ class ElementScraper {
     await fs.ensureDir(this.outputDir);
     await fs.ensureDir(this.screenshotsDir);
 
+    // Determine if we should run in headless mode (for CI/CD environments)
+    const isCI = process.env.CI === 'true' || process.env.PLAYWRIGHT_HEADLESS === 'true';
+    
     // Launch browser with optimized viewport for better element capture
     this.browser = await chromium.launch({
-      headless: false,
+      headless: isCI,
       args: ["--start-maximized"],
     });
     this.page = await this.browser.newPage();
