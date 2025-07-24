@@ -10,6 +10,8 @@
 		"scrape:buttons": "node cli.js buttons",
 		"scrape:cards": "node cli.js cards",
 		"scrape:timbertech": "node cli.js timbertech",
+		"scrape:timbertech-sitemap": "node cli.js timbertech-sitemap",
+		"build:pages": "./build-pages.sh",
 		"open-report": "node utils.js open",
 		"clean": "node utils.js clean",
 		"status": "node utils.js status"

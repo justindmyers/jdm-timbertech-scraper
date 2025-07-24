@@ -116,6 +116,39 @@ The scraper generates:
    - Dimensions and positioning
    - Summary statistics
 
+## GitHub Pages Integration
+
+This project includes automated GitHub Pages deployment for the TimberTech analysis:
+
+### Automated Publishing
+
+The project includes a GitHub Action (`.github/workflows/publish-timbertech.yml`) that:
+
+- **Runs automatically** on push to main branch
+- **Updates weekly** to keep analysis current
+- **Can be triggered manually** from GitHub Actions tab
+
+### Local Testing
+
+Test the GitHub Pages build locally:
+
+```bash
+# Build and prepare GitHub Pages content
+npm run build:pages
+
+# Serve locally for testing
+cd pages && python3 -m http.server 8000
+# Visit: http://localhost:8000
+```
+
+### Setup Instructions
+
+1. Enable GitHub Pages in repository Settings → Pages
+2. Select "GitHub Actions" as the source
+3. The workflow will automatically deploy to your GitHub Pages URL
+
+See [GITHUB_PAGES.md](GITHUB_PAGES.md) for detailed setup instructions.
+
 ## Example Use Cases
 
 ### UI Component Documentation

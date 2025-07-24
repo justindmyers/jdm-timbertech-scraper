@@ -741,6 +741,361 @@ class ElementScraper {
     }
   }
 
+  /**
+   * Generate HTML report for sitemap scraping with page grouping
+   */
+  async generateSitemapReport(scrapedUrls, failedUrls) {
+    const reportPath = path.join(
+      this.outputDir,
+      "sitemap_variations_report.html"
+    );
+
+    // Helper function to escape HTML
+    const escapeHtml = (text) => {
+      if (!text) return "";
+      return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    };
+
+    // Helper function to get the primary block type from classes
+    const getBlockType = (classNames) => {
+      const blockClass = classNames.find(
+        (cls) => cls.startsWith("wp-block-") && !cls.includes("__")
+      );
+      return blockClass || "other";
+    };
+
+    // Group variations by page URL first, then by block type
+    const pageGroups = {};
+    this.variations.forEach((variation) => {
+      const pageUrl = variation.pageUrl || "unknown";
+      if (!pageGroups[pageUrl]) {
+        pageGroups[pageUrl] = {};
+      }
+
+      const blockType = getBlockType(variation.classNames);
+      if (!pageGroups[pageUrl][blockType]) {
+        pageGroups[pageUrl][blockType] = [];
+      }
+
+      pageGroups[pageUrl][blockType].push(variation);
+    });
+
+    // Generate variation HTML
+    const generateVariationHtml = (variation, groupIndex, totalInGroup) => {
+      const screenshotHtml = variation.screenshotPath
+        ? `<img src="screenshots/${escapeHtml(variation.screenshotPath)}" 
+                 alt="Screenshot of ${getBlockType(
+                   variation.classNames
+                 )} variation ${groupIndex + 1}" 
+                 class="screenshot">`
+        : "<p>No screenshot available</p>";
+
+      const classTagsHtml = variation.classNames
+        .map((cls) => `<span class="class-tag">${escapeHtml(cls)}</span>`)
+        .join("");
+
+      // Create URL with anchor if available
+      let sourceUrl = variation.pageUrl;
+      if (sourceUrl && variation.anchorInfo) {
+        let anchorId = null;
+
+        if (variation.anchorInfo.elementId) {
+          anchorId = variation.anchorInfo.elementId;
+        } else if (
+          variation.anchorInfo.headingIds &&
+          variation.anchorInfo.headingIds.length > 0
+        ) {
+          anchorId = variation.anchorInfo.headingIds[0];
+        } else if (
+          variation.anchorInfo.otherIds &&
+          variation.anchorInfo.otherIds.length > 0
+        ) {
+          anchorId = variation.anchorInfo.otherIds[0];
+        }
+
+        if (anchorId) {
+          sourceUrl += `#${anchorId}`;
+        }
+      }
+
+      const urlLinkHtml = sourceUrl
+        ? `<p><strong>Source:</strong> <a href="${escapeHtml(
+            sourceUrl
+          )}" target="_blank">View on page</a></p>`
+        : "";
+
+      return `
+      <div class="variation">
+          <h5>Variation ${groupIndex + 1} of ${totalInGroup}</h5>
+          ${screenshotHtml}
+          <div class="metadata">
+              <p><strong>Selector:</strong> <code>${escapeHtml(
+                variation.selector
+              )}</code></p>
+              <p><strong>Tag Name:</strong> ${escapeHtml(variation.tagName)}</p>
+              <p><strong>Classes:</strong></p>
+              <div class="class-list">
+                  ${classTagsHtml}
+              </div>
+              ${urlLinkHtml}
+          </div>
+      </div>`;
+    };
+
+    // Generate page groups HTML
+    const pageGroupsHtml = Object.entries(pageGroups)
+      .map(([pageUrl, blockTypes]) => {
+        const pageTitle = pageUrl
+          .replace(/^https?:\/\//, "")
+          .replace(/\/$/, "");
+        const totalPageVariations = Object.values(blockTypes).reduce(
+          (sum, variations) => sum + variations.length,
+          0
+        );
+
+        const blockTypesHtml = Object.entries(blockTypes)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([blockType, variations]) => {
+            const blockDisplayName = blockType
+              .replace("wp-block-", "")
+              .replace(/-/g, " ")
+              .replace(/\b\w/g, (l) => l.toUpperCase());
+            const variationsHtml = variations
+              .map((variation, index) =>
+                generateVariationHtml(variation, index, variations.length)
+              )
+              .join("");
+
+            return `
+            <div class="block-type-group">
+                <h4 class="block-type-title">${blockDisplayName} (${
+              variations.length
+            } variation${variations.length !== 1 ? "s" : ""})</h4>
+                <div class="block-variations">
+                    ${variationsHtml}
+                </div>
+            </div>`;
+          })
+          .join("");
+
+        return `
+        <div class="page-group">
+            <h3 class="page-title">
+                <a href="${escapeHtml(pageUrl)}" target="_blank">${escapeHtml(
+          pageTitle
+        )}</a>
+                <span class="page-stats">(${totalPageVariations} variation${
+          totalPageVariations !== 1 ? "s" : ""
+        })</span>
+            </h3>
+            <div class="page-content">
+                ${blockTypesHtml}
+            </div>
+        </div>`;
+      })
+      .join("");
+
+    // Generate failed URLs section
+    const failedUrlsHtml =
+      failedUrls.length > 0
+        ? `
+        <div class="failed-urls">
+            <h2>Failed URLs</h2>
+            <div class="failed-list">
+                ${failedUrls
+                  .map(
+                    ({ url, error }) => `
+                    <div class="failed-item">
+                        <strong>${escapeHtml(url)}</strong><br>
+                        <span class="error-message">Error: ${escapeHtml(
+                          error
+                        )}</span>
+                    </div>
+                `
+                  )
+                  .join("")}
+            </div>
+        </div>
+    `
+        : "";
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sitemap Element Variations Report</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .summary {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .page-group {
+            margin: 30px 0;
+            border: 2px solid #dee2e6;
+            border-radius: 12px;
+            padding: 20px;
+            background-color: #fafafa;
+        }
+        .page-title {
+            color: #1e40af;
+            margin: 0 0 20px 0;
+            padding: 10px 0;
+            border-bottom: 2px solid #e0e0e0;
+            font-size: 1.3em;
+        }
+        .page-title a {
+            color: #1e40af;
+            text-decoration: none;
+        }
+        .page-title a:hover {
+            text-decoration: underline;
+        }
+        .page-stats {
+            font-weight: normal;
+            color: #666;
+            font-size: 0.9em;
+        }
+        .block-type-group {
+            margin: 20px 0;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 15px;
+            background-color: white;
+        }
+        .block-type-title {
+            color: #2c5282;
+            margin: 0 0 15px 0;
+            font-size: 1.1em;
+        }
+        .block-variations {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 15px;
+        }
+        .variation {
+            border: 1px solid #ddd;
+            margin: 0;
+            padding: 12px;
+            border-radius: 6px;
+            background-color: #fefefe;
+        }
+        .variation h5 {
+            color: #495057;
+            margin: 0 0 10px 0;
+            font-size: 0.9em;
+        }
+        .screenshot {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .metadata {
+            font-size: 12px;
+        }
+        .metadata p {
+            margin: 8px 0;
+        }
+        .class-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin: 8px 0;
+        }
+        .class-tag {
+            background-color: #e3f2fd;
+            color: #1565c0;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-family: monospace;
+        }
+        code {
+            background-color: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-size: 11px;
+        }
+        .failed-urls {
+            margin: 30px 0;
+            padding: 20px;
+            background-color: #fff5f5;
+            border: 1px solid #fed7d7;
+            border-radius: 8px;
+        }
+        .failed-urls h2 {
+            color: #c53030;
+            margin: 0 0 15px 0;
+        }
+        .failed-item {
+            margin: 10px 0;
+            padding: 10px;
+            background-color: white;
+            border-radius: 4px;
+        }
+        .error-message {
+            color: #e53e3e;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🗺️ Sitemap Element Variations Report</h1>
+        
+        <div class="summary">
+            <h2>Summary</h2>
+            <p><strong>Total Variations Found:</strong> ${
+              this.variations.length
+            }</p>
+            <p><strong>Pages Scraped:</strong> ${
+              scrapedUrls.length - failedUrls.length
+            }/${scrapedUrls.length}</p>
+            <p><strong>Block Types:</strong> ${
+              new Set(this.variations.map((v) => getBlockType(v.classNames)))
+                .size
+            }</p>
+            <p><strong>Generated:</strong> ${new Date().toLocaleString()}</p>
+        </div>
+
+        ${pageGroupsHtml}
+        
+        ${failedUrlsHtml}
+    </div>
+</body>
+</html>`;
+
+    await fs.writeFile(reportPath, html);
+    console.log(`Report generated: ${reportPath}`);
+    return reportPath;
+  }
+
   async generateReport() {
     const reportPath = path.join(this.outputDir, "variations_report.html");
 
@@ -982,6 +1337,295 @@ class ElementScraper {
     await fs.writeFile(reportPath, html);
     console.log(`Report generated: ${reportPath}`);
     return reportPath;
+  }
+
+  /**
+   * Scrape elements from multiple URLs found in a sitemap
+   * @param {string} baseUrl - Base URL of the website (e.g., 'https://example.com')
+   * @param {string} selector - CSS selector for elements to scrape
+   * @param {string} variationClassPrefix - Class prefix to filter variations
+   * @param {Object} options - Sitemap and scraping options
+   * @returns {Promise<Object>} Results containing all variations and report path
+   */
+  async scrapeSitemap(
+    baseUrl,
+    selector,
+    variationClassPrefix = "",
+    options = {}
+  ) {
+    const {
+      maxUrls = 10,
+      includePatterns = [],
+      excludePatterns = [],
+      delayBetweenPages = 2000, // 2 seconds delay between pages
+      continueOnError = true,
+      manualUrls = null, // Optional manual URL list
+      followLinks = true, // Whether to follow same-domain links
+      maxDepth = 2, // Maximum crawl depth
+    } = options;
+
+    console.log(`🚀 Starting sitemap scraping for: ${baseUrl}`);
+    console.log(`🎯 Selector: ${selector}`);
+    if (variationClassPrefix) {
+      console.log(`🏷️  Class prefix filter: ${variationClassPrefix}`);
+    }
+    if (followLinks) {
+      console.log(`🔗 Link following enabled (max depth: ${maxDepth})`);
+    }
+
+    try {
+      let urls = [];
+
+      // Use manual URLs if provided, otherwise fetch from sitemap
+      if (manualUrls && Array.isArray(manualUrls)) {
+        console.log(`📋 Using ${manualUrls.length} manual URLs`);
+        urls = manualUrls.slice(0, maxUrls);
+      } else {
+        // Import ScraperUtils to use sitemap functionality
+        const ScraperUtils = require("../utils.js");
+
+        // Fetch URLs from sitemap
+        urls = await ScraperUtils.fetchSitemapUrls(baseUrl, {
+          maxUrls,
+          includePatterns,
+          excludePatterns,
+        });
+      }
+
+      if (urls.length === 0) {
+        throw new Error("No URLs found in sitemap or after filtering");
+      }
+
+      console.log(`📄 Will scrape ${urls.length} initial pages from sitemap\n`);
+
+      // Initialize browser once for all pages
+      await this.initialize();
+
+      // Store all variations from all pages
+      const allVariations = [];
+      const failedUrls = [];
+      const visitedUrls = new Set(); // Track visited URLs to avoid duplicates
+      const urlsToProcess = [...urls]; // Queue of URLs to process
+      let processedCount = 0;
+
+      // Extract domain from base URL for same-domain filtering
+      const baseDomain = new URL(baseUrl).hostname;
+
+      while (urlsToProcess.length > 0 && processedCount < maxUrls) {
+        const url = urlsToProcess.shift();
+
+        // Skip if already visited
+        if (visitedUrls.has(url)) {
+          continue;
+        }
+
+        visitedUrls.add(url);
+
+        try {
+          processedCount++;
+          console.log(
+            `\n--- Page ${processedCount}/${Math.min(
+              urlsToProcess.length + processedCount,
+              maxUrls
+            )}: ${url} ---`
+          );
+
+          this.currentUrl = url;
+          this.variations = []; // Reset variations for this page
+
+          await this.navigateToPage(url);
+          await this.findElementVariations(selector, variationClassPrefix);
+
+          if (this.variations.length > 0) {
+            console.log(
+              `✅ Found ${this.variations.length} variations on this page`
+            );
+
+            // Take screenshots immediately for this page's variations
+            console.log(
+              `📸 Taking screenshots for page ${processedCount} (${this.variations.length} variations)...`
+            );
+            await this.takeScreenshots();
+
+            // Add page info to each variation after screenshots are taken
+            const pageVariations = this.variations.map((variation, index) => ({
+              ...variation,
+              pageUrl: url,
+              pageIndex: processedCount,
+              globalIndex: allVariations.length + index,
+            }));
+
+            allVariations.push(...pageVariations);
+          } else {
+            console.log(`ℹ️  No variations found on this page`);
+          }
+
+          // Discover and queue new links if link following is enabled
+          if (followLinks && processedCount < maxDepth) {
+            try {
+              const newLinks = await this.discoverSameDomainLinks(
+                baseDomain,
+                visitedUrls,
+                includePatterns,
+                excludePatterns
+              );
+
+              if (newLinks.length > 0) {
+                console.log(
+                  `🔍 Discovered ${newLinks.length} new same-domain links`
+                );
+
+                // Add new links to the processing queue (up to maxUrls limit)
+                const remainingSlots =
+                  maxUrls - processedCount - urlsToProcess.length;
+                const linksToAdd = newLinks.slice(0, remainingSlots);
+                urlsToProcess.push(...linksToAdd);
+
+                if (linksToAdd.length > 0) {
+                  console.log(
+                    `📝 Added ${linksToAdd.length} links to crawl queue`
+                  );
+                }
+              }
+            } catch (linkError) {
+              console.log(`⚠️  Failed to discover links: ${linkError.message}`);
+            }
+          }
+
+          // Add delay between pages to be respectful
+          if (processedCount < urls.length && delayBetweenPages > 0) {
+            console.log(
+              `⏳ Waiting ${delayBetweenPages}ms before next page...`
+            );
+            await new Promise((resolve) =>
+              setTimeout(resolve, delayBetweenPages)
+            );
+          }
+        } catch (error) {
+          console.error(`❌ Error scraping ${url}:`, error.message);
+          failedUrls.push({ url, error: error.message });
+
+          if (!continueOnError) {
+            throw error;
+          }
+        }
+      }
+
+      // Set all variations for report generation
+      this.variations = allVariations;
+
+      console.log(`📄 Generating consolidated report...`);
+      const reportPath = await this.generateSitemapReport(urls, failedUrls);
+
+      console.log(`\n🎉 Sitemap scraping completed!`);
+      console.log(`📊 Total variations found: ${this.variations.length}`);
+      console.log(
+        `✅ Successful pages: ${urls.length - failedUrls.length}/${urls.length}`
+      );
+      if (failedUrls.length > 0) {
+        console.log(`❌ Failed pages: ${failedUrls.length}`);
+        failedUrls.forEach(({ url, error }) => {
+          console.log(`   - ${url}: ${error}`);
+        });
+      }
+      console.log(`📄 Report saved to: ${reportPath}`);
+
+      return {
+        variations: this.variations,
+        reportPath,
+        scrapedUrls: urls,
+        failedUrls,
+        stats: {
+          totalPages: urls.length,
+          successfulPages: urls.length - failedUrls.length,
+          totalVariations: this.variations.length,
+        },
+      };
+    } catch (error) {
+      console.error("❌ Error during sitemap scraping:", error);
+      throw error;
+    } finally {
+      if (this.browser) {
+        await this.browser.close();
+      }
+    }
+  }
+
+  /**
+   * Discover same-domain links on the current page
+   * @private
+   */
+  async discoverSameDomainLinks(
+    baseDomain,
+    visitedUrls,
+    includePatterns = [],
+    excludePatterns = []
+  ) {
+    try {
+      const links = await this.page.evaluate((domain) => {
+        const anchors = document.querySelectorAll("a[href]");
+        const discoveredLinks = [];
+
+        anchors.forEach((anchor) => {
+          const href = anchor.getAttribute("href");
+          if (!href) return;
+
+          let absoluteUrl;
+          try {
+            // Handle relative URLs
+            if (href.startsWith("/")) {
+              absoluteUrl = `${window.location.protocol}//${domain}${href}`;
+            } else if (href.startsWith("http")) {
+              absoluteUrl = href;
+            } else if (
+              !href.startsWith("#") &&
+              !href.startsWith("mailto:") &&
+              !href.startsWith("tel:")
+            ) {
+              // Handle relative paths like 'page.html' or '../page.html'
+              absoluteUrl = new URL(href, window.location.href).toString();
+            } else {
+              return; // Skip anchors, mailto, tel, etc.
+            }
+
+            // Check if it's the same domain
+            const linkDomain = new URL(absoluteUrl).hostname;
+            if (linkDomain === domain) {
+              // Clean URL (remove fragments and query params for deduplication)
+              const cleanUrl = absoluteUrl.split("#")[0].split("?")[0];
+              discoveredLinks.push(cleanUrl);
+            }
+          } catch (e) {
+            // Invalid URL, skip
+          }
+        });
+
+        return [...new Set(discoveredLinks)]; // Remove duplicates
+      }, baseDomain);
+
+      // Filter out already visited URLs
+      const newLinks = links.filter((url) => !visitedUrls.has(url));
+
+      // Apply include/exclude patterns
+      let filteredLinks = newLinks;
+
+      if (includePatterns.length > 0) {
+        filteredLinks = filteredLinks.filter((url) =>
+          includePatterns.some((pattern) => url.includes(pattern))
+        );
+      }
+
+      if (excludePatterns.length > 0) {
+        filteredLinks = filteredLinks.filter(
+          (url) => !excludePatterns.some((pattern) => url.includes(pattern))
+        );
+      }
+
+      return filteredLinks;
+    } catch (error) {
+      console.log(`⚠️  Error discovering links: ${error.message}`);
+      return [];
+    }
   }
 
   async scrape(url, selector, variationClassPrefix = "") {

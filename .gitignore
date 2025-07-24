@@ -4,9 +4,10 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Generated output
+# Generated output (local development)
 output/
 screenshots/
+pages/
 *.png
 *.jpg
 *.jpeg
